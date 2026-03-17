@@ -8,6 +8,20 @@ import re
 
 VECTORSTORE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "vectorstore")
 
+# Stop words to exclude from filename matching — these cause massive noise
+STOP_WORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+    "had", "her", "was", "one", "our", "out", "has", "his", "how", "its",
+    "may", "new", "now", "old", "see", "way", "who", "did", "get", "let",
+    "say", "she", "too", "use", "what", "with", "this", "that", "from",
+    "they", "been", "have", "many", "some", "them", "than", "each", "make",
+    "like", "over", "such", "take", "into", "most", "about", "other",
+    "which", "their", "there", "could", "would", "should", "where", "when",
+    "tell", "show", "give", "best", "does", "will", "just", "more", "also",
+    "very", "much", "what", "specs", "specifications", "information", "details",
+    "power", "rating", "frequency", "response", "weight", "dimensions",
+}
+
 @st.cache_resource
 def load_vectorstore():
     with open(os.path.join(VECTORSTORE_DIR, "vectorizer.pkl"), "rb") as f:
@@ -19,14 +33,14 @@ def load_vectorstore():
     return vectorizer, tfidf_matrix, meta
 
 def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
-    """Multi-strategy search: tries original query, then expanded terms."""
+    """Multi-strategy search with improved filename matching."""
     query_lower = query.lower()
 
     # Strategy 1: Direct TF-IDF search on original query
     query_vec = vectorizer.transform([query])
     scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
 
-    # Strategy 2: Also search for individual key terms to catch product names
+    # Strategy 2: Extract and search product names/model numbers
     product_terms = re.findall(r'[A-Za-z]+[\s\-]?\d+[A-Za-z]*|\b[A-Z]{2,}[- ]?\d+\w*', query)
     if product_terms:
         for term in product_terms:
@@ -34,18 +48,50 @@ def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
             term_scores = cosine_similarity(term_vec, tfidf_matrix).flatten()
             scores = np.maximum(scores, term_scores * 0.9)
 
-    # Strategy 3: Also check filename matches (very reliable for product lookups)
+    # Strategy 3: Filename matching — ONLY match product-relevant words
+    # Filter out stop words and short words to prevent noise
+    query_words = [
+        w.strip("?.,!") for w in query_lower.split()
+        if len(w.strip("?.,!")) > 2 and w.strip("?.,!") not in STOP_WORDS
+    ]
+
     for i, m in enumerate(meta["metadatas"]):
         fname = m.get("filename", "").lower()
-        for word in query_lower.split():
-            if len(word) > 2 and word in fname:
-                scores[i] = max(scores[i], 0.3)
+        # Count how many meaningful query words match the filename
+        match_count = sum(1 for word in query_words if word in fname)
+        if match_count > 0:
+            # Scale boost by number of matching words
+            boost = min(0.3 + (match_count - 1) * 0.15, 0.6)
+            scores[i] = max(scores[i], boost)
+
+    # Strategy 4: Direct product name match in document text
+    if product_terms:
+        for i, text in enumerate(meta["texts"]):
+            text_upper = text.upper()
+            for term in product_terms:
+                if term.upper() in text_upper:
+                    scores[i] = max(scores[i], 0.25)
 
     # Apply brand filter
     if brand:
         for i, m in enumerate(meta["metadatas"]):
             if m.get("brand", "") != brand:
                 scores[i] = 0
+
+    # Prioritize Engineering Data Sheets over certificates/compliance docs
+    for i, m in enumerate(meta["metadatas"]):
+        fname = m.get("filename", "").lower()
+        if scores[i] > 0:
+            if "engineering data sheet" in fname or "data sheet" in fname:
+                scores[i] *= 1.3
+            elif "user manual" in fname or "owner" in fname:
+                scores[i] *= 1.2
+            elif "spec" in fname or "specification" in fname:
+                scores[i] *= 1.2
+            elif "declaration of conformity" in fname or "certificate" in fname:
+                scores[i] *= 0.6
+            elif "legacy" in fname:
+                scores[i] *= 0.7
 
     top_indices = scores.argsort()[-top_k:][::-1]
     results = [
@@ -81,26 +127,26 @@ GENERAL GUIDELINES:
 7. When sharing specs, clearly indicate which source document each fact comes from.
 8. If the user asks to "show" or "display" a data sheet, explain that you can provide the key specifications and information FROM the data sheet, but cannot display the original PDF.
 9. When sharing product specifications, organize them clearly with the product name, key features, and technical specs.
-10. Always be helpful and professional. If you can only partially answer a question, do so and explain what additional information would be needed.
+10. If you genuinely cannot find specific information in the context, still be helpful — share what you DO know and suggest what the user might search for next.
 
 CONTEXT FROM PRODUCT DOCUMENTS:
 {context}"""
 
-st.set_page_config(page_title="EV/Dynacord Chatbot", page_icon="🔊")
-st.title("🔊 Electro-Voice / Dynacord Chatbot")
-st.caption("Ask about any EV or Dynacord product - specs, setup, troubleshooting, and more.")
+st.set_page_config(page_title="EV/Dynacord Chatbot", page_icon="\ud83d\udd0a")
+st.title("\ud83d\udd0a Electro-Voice / Dynacord Chatbot")
+st.caption("Ask about any EV or Dynacord product \u2014 specs, setup, troubleshooting, and more.")
 
 # Load API key from secrets (auto) or sidebar (manual fallback)
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 if not api_key:
     api_key = st.sidebar.text_input("OpenAI API Key", type="password")
 else:
-    st.sidebar.success("AI-powered answers enabled")
+    st.sidebar.success("\u2705 AI-powered answers enabled")
 
 brand_filter = st.sidebar.selectbox("Filter by brand", ["All", "Electro-Voice", "Dynacord"])
 
 vectorizer, tfidf_matrix, meta = load_vectorstore()
-st.sidebar.info(f"Library: {len(meta['texts']):,} document chunks loaded")
+st.sidebar.info(f"\ud83d\udcda {len(meta['texts']):,} document chunks loaded")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -147,12 +193,12 @@ if prompt := st.chat_input("Ask about EV/Dynacord products..."):
 
         # Add source references
         if sources:
-            answer += "\n\n---\nSources: " + ", ".join(sources[:5])
+            answer += "\n\n---\n\ud83d\udcc4 **Sources:** " + ", ".join(sources[:5])
     else:
         answer = "**Relevant documents found:**\n\n"
         for r in results[:10]:
             score_pct = f"{r['score']:.0%}"
-            answer += f"**{r['metadata']['filename']}** ({r['metadata']['brand']}) - relevance: {score_pct}\n{r['text'][:300]}...\n\n"
+            answer += f"\ud83d\udcc4 **{r['metadata']['filename']}** ({r['metadata']['brand']}) \u2014 relevance: {score_pct}\n{r['text'][:300]}...\n\n"
         answer += "\n*Add your OpenAI API key in Streamlit secrets or the sidebar for AI-powered answers.*"
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
