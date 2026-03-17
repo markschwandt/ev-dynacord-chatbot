@@ -32,7 +32,13 @@ def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=5):
 st.set_page_config(page_title="EV/Dynacord Chatbot", page_icon="🔊")
 st.title("🔊 Electro-Voice / Dynacord Chatbot")
 
-api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+# Load API key from secrets (auto) or sidebar (manual fallback)
+api_key = st.secrets.get("OPENAI_API_KEY", "")
+if not api_key:
+    api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+else:
+    st.sidebar.success("OpenAI API key loaded from secrets")
+
 brand_filter = st.sidebar.selectbox("Filter by brand", ["All", "Electro-Voice", "Dynacord"])
 
 vectorizer, tfidf_matrix, meta = load_vectorstore()
@@ -69,7 +75,7 @@ if prompt := st.chat_input("Ask about EV/Dynacord products..."):
         answer = "**Relevant documents found:**\n\n"
         for r in results:
             answer += f"📄 **{r['metadata']['filename']}** ({r['metadata']['brand']})\n{r['text']}\n\n"
-        answer += "\n*Add your OpenAI API key in the sidebar for AI-powered answers.*"
+        answer += "\n*Add your OpenAI API key in Streamlit secrets or the sidebar for AI-powered answers.*"
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
     with st.chat_message("assistant"):
