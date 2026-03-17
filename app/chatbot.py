@@ -1,3 +1,46 @@
+import os
+import json
+import pickle
+import streamlit as st
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import re
+
+VECTORSTORE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "vectorstore")
+
+@st.cache_resource
+def load_vectorstore():
+    with open(os.path.join(VECTORSTORE_DIR, "vectorizer.pkl"), "rb") as f:
+        vectorizer = pickle.load(f)
+    with open(os.path.join(VECTORSTORE_DIR, "tfidf_matrix.pkl"), "rb") as f:
+        tfidf_matrix = pickle.load(f)
+    with open(os.path.join(VECTORSTORE_DIR, "chunks_meta.json"), "r") as f:
+        meta = json.load(f)
+    return vectorizer, tfidf_matrix, meta
+
+def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
+    """Multi-strategy search: tries original query, then expanded terms."""
+    query_lower = query.lower()
+
+    # Strategy 1: Direct TF-IDF search on original query
+    query_vec = vectorizer.transform([query])
+    scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
+
+    # Strategy 2: Also search for individual key terms to catch product names
+    product_terms = re.findall(r'[A-Za-z]+[\s\-]?\d+[A-Za-z]*|\b[A-Z]{2,}[- ]?\d+\w*', query)
+    if product_terms:
+        for term in product_terms:
+            term_vec = vectorizer.transform([term])
+            term_scores = cosine_similarity(term_vec, tfidf_matrix).flatten()
+            scores = np.maximum(scores, term_scores * 0.9)
+
+    # Strategy 3: Also check filename matches (very reliable for product lookups)
+    for i, m in enumerate(meta["metadatas"]):
+        fname = m.get("filename", "").lower()
+        for word in query_lower.split():
+            if len(word) > 2 and word in fname:
+                scores[i] = max(scores[i], 0.3)
+
     # Apply brand filter
     if brand:
         for i, m in enumerate(meta["metadatas"]):
@@ -85,4 +128,26 @@ if prompt := st.chat_input("Ask about EV/Dynacord products..."):
         messages = [{"role": "system", "content": SYSTEM_PROMPT.format(context=context)}]
         # Include recent conversation history (last 6 messages)
         for msg in st.session_state.messages[-7:-1]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": prompt})
 
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.3,
+        )
+        answer = response.choices[0].message.content
+
+        # Add source references
+        if sources:
+            answer += "\n\n---\nSources: " + ", ".join(sources[:5])
+    else:
+        answer = "**Relevant documents found:**\n\n"
+        for r in results[:10]:
+            score_pct = f"{r['score']:.0%}"
+            answer += f"**{r['metadata']['filename']}** ({r['metadata']['brand']}) - relevance: {score_pct}\n{r['text'][:300]}...\n\n"
+        answer += "\n*Add your OpenAI API key in Streamlit secrets or the sidebar for AI-powered answers.*"
+
+    st.session_state.messages.append({"role": "assistant", "content": answer})
+    with st.chat_message("assistant"):
+        st.markdown(answer)
