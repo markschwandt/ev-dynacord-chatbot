@@ -132,21 +132,21 @@ GENERAL GUIDELINES:
 CONTEXT FROM PRODUCT DOCUMENTS:
 {context}"""
 
-st.set_page_config(page_title="EV/Dynacord Chatbot", page_icon="\ud83d\udd0a")
-st.title("\ud83d\udd0a Electro-Voice / Dynacord Chatbot")
-st.caption("Ask about any EV or Dynacord product \u2014 specs, setup, troubleshooting, and more.")
+st.set_page_config(page_title="EV/Dynacord Chatbot", page_icon="🔊")
+st.title("🔊 Electro-Voice / Dynacord Chatbot")
+st.caption("Ask about any EV or Dynacord product — specs, setup, troubleshooting, and more.")
 
 # Load API key from secrets (auto) or sidebar (manual fallback)
 api_key = st.secrets.get("OPENAI_API_KEY", "")
 if not api_key:
     api_key = st.sidebar.text_input("OpenAI API Key", type="password")
 else:
-    st.sidebar.success("\u2705 AI-powered answers enabled")
+    st.sidebar.success("✅ AI-powered answers enabled")
 
 brand_filter = st.sidebar.selectbox("Filter by brand", ["All", "Electro-Voice", "Dynacord"])
 
 vectorizer, tfidf_matrix, meta = load_vectorstore()
-st.sidebar.info(f"\ud83d\udcda {len(meta['texts']):,} document chunks loaded")
+st.sidebar.info(f"📚 {len(meta['texts']):,} document chunks loaded")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -193,12 +193,12 @@ if prompt := st.chat_input("Ask about EV/Dynacord products..."):
 
         # Add source references
         if sources:
-            answer += "\n\n---\n\ud83d\udcc4 **Sources:** " + ", ".join(sources[:5])
+            answer += "\n\n---\n📄 **Sources:** " + ", ".join(sources[:5])
     else:
         answer = "**Relevant documents found:**\n\n"
         for r in results[:10]:
             score_pct = f"{r['score']:.0%}"
-            answer += f"\ud83d\udcc4 **{r['metadata']['filename']}** ({r['metadata']['brand']}) \u2014 relevance: {score_pct}\n{r['text'][:300]}...\n\n"
+            answer += f"📄 **{r['metadata']['filename']}** ({r['metadata']['brand']}) — relevance: {score_pct}\n{r['text'][:300]}...\n\n"
         answer += "\n*Add your OpenAI API key in Streamlit secrets or the sidebar for AI-powered answers.*"
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
