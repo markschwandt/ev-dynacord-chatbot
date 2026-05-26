@@ -8,9 +8,6 @@ __pycache__/
 # Local PDF copy (13 GB — never commit, regenerate from Drive)
 data/pdfs/
 
-# ChromaDB local storage (multi-GB — deployment strategy TBD in Phase 2)
-data/chromadb/
-
 # Scratch / generated lists (regenerated from Drive walk)
 data/pdf_list_full.txt
 data/unprocessed_pdfs.txt

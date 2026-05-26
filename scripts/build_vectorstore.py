@@ -12,6 +12,10 @@ from pathlib import Path
 import chromadb
 from chromadb.config import Settings
 from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load OPENAI_API_KEY (and any other vars) from ../.env if present
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # Configure logging
 logging.basicConfig(
@@ -35,8 +39,8 @@ VECTORSTORE_DIR = os.environ.get(
 )
 COLLECTION_NAME = "ev_dynacord_docs"
 EMBEDDING_MODEL = "text-embedding-3-small"
-BATCH_SIZE = 100  # OpenAI embedding API batch size limit
-RATE_LIMIT_DELAY = 0.5  # seconds between batches to stay under rate limits
+BATCH_SIZE = 500  # text-embedding-3-small accepts up to 2048 inputs per request
+RATE_LIMIT_DELAY = 0.1  # seconds between batches (text-embedding-3-small has generous rate limits)
 
 
 def load_chunks(path: str) -> list[dict]:
@@ -56,7 +60,13 @@ def get_embeddings(client: OpenAI, texts: list[str], model: str = EMBEDDING_MODE
 
 def build_vectorstore(chunks: list[dict]):
     """Build ChromaDB vector store from chunks with OpenAI embeddings."""
-    openai_client = OpenAI()  # Uses OPENAI_API_KEY env var
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY not set. Either export it in your shell or "
+            "create a .env file at the repo root with: OPENAI_API_KEY=sk-..."
+        )
+    openai_client = OpenAI(api_key=api_key)
 
     # Initialize ChromaDB with persistent storage
     os.makedirs(VECTORSTORE_DIR, exist_ok=True)
