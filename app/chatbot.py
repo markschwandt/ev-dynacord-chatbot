@@ -6,7 +6,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import re
 
+# ── Retrieval mode ────────────────────────────────────────────────────────
+# "tfidf" (default, current production) or "chroma" (dense embeddings via OpenAI
+# text-embedding-3-small + ChromaDB). Set via env var or Streamlit secrets.
+RETRIEVAL_MODE = os.environ.get(
+    "RETRIEVAL_MODE",
+    st.secrets.get("RETRIEVAL_MODE", "tfidf") if hasattr(st, "secrets") else "tfidf",
+)
+
 VECTORSTORE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "vectorstore")
+CHROMA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "chromadb")
+CHROMA_COLLECTION = "ev_dynacord_docs"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
 # Stop words to exclude from filename matching — these cause massive noise
 STOP_WORDS = {
@@ -22,8 +33,27 @@ STOP_WORDS = {
     "power", "rating", "frequency", "response", "weight", "dimensions",
 }
 
+
+# ── Doc-type re-ranking (shared between TF-IDF and Chroma modes) ─────────
+def _doctype_multiplier(filename: str) -> float:
+    """Boost Engineering Data Sheets / manuals, penalize certificates."""
+    fn = filename.lower()
+    if "engineering data sheet" in fn or "data sheet" in fn:
+        return 1.3
+    if "user manual" in fn or "owner" in fn:
+        return 1.2
+    if "spec" in fn or "specification" in fn:
+        return 1.2
+    if "declaration of conformity" in fn or "certificate" in fn:
+        return 0.6
+    if "legacy" in fn:
+        return 0.7
+    return 1.0
+
+
+# ── TF-IDF mode (current production) ──────────────────────────────────────
 @st.cache_resource
-def load_vectorstore():
+def load_tfidf():
     with open(os.path.join(VECTORSTORE_DIR, "vectorizer.pkl"), "rb") as f:
         vectorizer = pickle.load(f)
     with open(os.path.join(VECTORSTORE_DIR, "tfidf_matrix.pkl"), "rb") as f:
@@ -32,8 +62,9 @@ def load_vectorstore():
         meta = json.load(f)
     return vectorizer, tfidf_matrix, meta
 
-def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
-    """Multi-strategy search with improved filename matching."""
+
+def search_tfidf(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
+    """Multi-strategy TF-IDF search with filename matching + doc-type boost."""
     query_lower = query.lower()
 
     # Strategy 1: Direct TF-IDF search on original query
@@ -48,19 +79,15 @@ def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
             term_scores = cosine_similarity(term_vec, tfidf_matrix).flatten()
             scores = np.maximum(scores, term_scores * 0.9)
 
-    # Strategy 3: Filename matching — ONLY match product-relevant words
-    # Filter out stop words and short words to prevent noise
+    # Strategy 3: Filename matching — meaningful query words only
     query_words = [
         w.strip("?.,!") for w in query_lower.split()
         if len(w.strip("?.,!")) > 2 and w.strip("?.,!") not in STOP_WORDS
     ]
-
     for i, m in enumerate(meta["metadatas"]):
         fname = m.get("filename", "").lower()
-        # Count how many meaningful query words match the filename
         match_count = sum(1 for word in query_words if word in fname)
         if match_count > 0:
-            # Scale boost by number of matching words
             boost = min(0.3 + (match_count - 1) * 0.15, 0.6)
             scores[i] = max(scores[i], boost)
 
@@ -72,33 +99,78 @@ def search(query, vectorizer, tfidf_matrix, meta, brand=None, top_k=15):
                 if term.upper() in text_upper:
                     scores[i] = max(scores[i], 0.25)
 
-    # Apply brand filter
+    # Brand filter
     if brand:
         for i, m in enumerate(meta["metadatas"]):
             if m.get("brand", "") != brand:
                 scores[i] = 0
 
-    # Prioritize Engineering Data Sheets over certificates/compliance docs
+    # Doc-type prioritization
     for i, m in enumerate(meta["metadatas"]):
-        fname = m.get("filename", "").lower()
         if scores[i] > 0:
-            if "engineering data sheet" in fname or "data sheet" in fname:
-                scores[i] *= 1.3
-            elif "user manual" in fname or "owner" in fname:
-                scores[i] *= 1.2
-            elif "spec" in fname or "specification" in fname:
-                scores[i] *= 1.2
-            elif "declaration of conformity" in fname or "certificate" in fname:
-                scores[i] *= 0.6
-            elif "legacy" in fname:
-                scores[i] *= 0.7
+            scores[i] *= _doctype_multiplier(m.get("filename", ""))
 
     top_indices = scores.argsort()[-top_k:][::-1]
-    results = [
+    return [
         {"text": meta["texts"][idx], "metadata": meta["metadatas"][idx], "score": float(scores[idx])}
         for idx in top_indices if scores[idx] > 0
     ]
-    return results
+
+
+# ── Chroma mode (dense embeddings via OpenAI text-embedding-3-small) ─────
+@st.cache_resource
+def load_chroma():
+    import chromadb
+    client = chromadb.PersistentClient(path=CHROMA_DIR)
+    return client.get_collection(CHROMA_COLLECTION)
+
+
+@st.cache_resource
+def get_embedding_client(api_key):
+    from openai import OpenAI
+    return OpenAI(api_key=api_key)
+
+
+def search_chroma(query, collection, api_key, brand=None, top_k=15):
+    """Dense-embedding semantic search via ChromaDB."""
+    client = get_embedding_client(api_key)
+    q_emb = client.embeddings.create(
+        input=[query], model=EMBEDDING_MODEL
+    ).data[0].embedding
+
+    where = {"brand": brand} if brand else None
+    # Over-fetch so doc-type re-ranking has options
+    n = min(top_k * 3, 50)
+    res = collection.query(
+        query_embeddings=[q_emb], n_results=n, where=where,
+    )
+
+    if not res["ids"] or not res["ids"][0]:
+        return []
+
+    out = []
+    for i in range(len(res["ids"][0])):
+        # ChromaDB cosine distance ∈ [0, 2]; convert to similarity ∈ [-1, 1]
+        sim = 1.0 - res["distances"][0][i]
+        meta = res["metadatas"][0][i]
+        score = sim * _doctype_multiplier(meta.get("filename", ""))
+        out.append({
+            "text": res["documents"][0][i],
+            "metadata": meta,
+            "score": score,
+        })
+
+    out.sort(key=lambda r: r["score"], reverse=True)
+    return out[:top_k]
+
+
+# ── Unified search dispatch ──────────────────────────────────────────────
+def search(query, store, api_key=None, brand=None, top_k=15):
+    if RETRIEVAL_MODE == "chroma":
+        return search_chroma(query, store, api_key, brand=brand, top_k=top_k)
+    vectorizer, tfidf_matrix, meta = store
+    return search_tfidf(query, vectorizer, tfidf_matrix, meta, brand=brand, top_k=top_k)
+
 
 def get_unique_sources(results):
     """Get unique document sources from results."""
@@ -110,6 +182,7 @@ def get_unique_sources(results):
             seen.add(fname)
             sources.append(fname)
     return sources
+
 
 SYSTEM_PROMPT = """You are the official product support assistant for Electro-Voice (EV) and Dynacord professional audio equipment. You represent these brands exclusively.
 
@@ -145,8 +218,14 @@ else:
 
 brand_filter = st.sidebar.selectbox("Filter by brand", ["All", "Electro-Voice", "Dynacord"])
 
-vectorizer, tfidf_matrix, meta = load_vectorstore()
-st.sidebar.info(f"📚 {len(meta['texts']):,} document chunks loaded")
+# Load the configured retrieval backend
+if RETRIEVAL_MODE == "chroma":
+    store = load_chroma()
+    st.sidebar.info(f"📚 {store.count():,} chunks (dense embeddings)")
+else:
+    vectorizer, tfidf_matrix, meta = load_tfidf()
+    store = (vectorizer, tfidf_matrix, meta)
+    st.sidebar.info(f"📚 {len(meta['texts']):,} chunks (TF-IDF)")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -161,7 +240,7 @@ if prompt := st.chat_input("Ask about EV/Dynacord products..."):
         st.markdown(prompt)
 
     brand = None if brand_filter == "All" else brand_filter
-    results = search(prompt, vectorizer, tfidf_matrix, meta, brand=brand, top_k=15)
+    results = search(prompt, store, api_key=api_key, brand=brand, top_k=15)
 
     # Build rich context with document sources clearly labeled
     context_parts = []

@@ -1,4 +1,29 @@
 .env
+.env.local
 __pycache__/
 *.pyc
+*.pyo
 .DS_Store
+
+# Local PDF copy (13 GB — never commit, regenerate from Drive)
+data/pdfs/
+
+# ChromaDB local storage (multi-GB — deployment strategy TBD in Phase 2)
+data/chromadb/
+
+# Scratch / generated lists (regenerated from Drive walk)
+data/pdf_list_full.txt
+data/unprocessed_pdfs.txt
+data/chunks/manifest.json
+
+# Local venv
+.venv/
+venv/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp

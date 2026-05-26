@@ -31,7 +31,7 @@ CHUNKS_FILE = os.environ.get(
 )
 VECTORSTORE_DIR = os.environ.get(
     "VECTORSTORE_DIR",
-    os.path.join(os.path.dirname(__file__), "..", "data", "vectorstore"),
+    os.path.join(os.path.dirname(__file__), "..", "data", "chromadb"),
 )
 COLLECTION_NAME = "ev_dynacord_docs"
 EMBEDDING_MODEL = "text-embedding-3-small"
