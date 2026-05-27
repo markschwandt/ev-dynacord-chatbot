@@ -24,3 +24,11 @@ venv/
 .vscode/
 .idea/
 *.swp
+
+# Confidential pricing data + price-list derivatives (NEVER commit to public repo)
+data/pricing_2026_*.md
+data/price_list_skus.json
+data/master_skus.json
+data/eds_matched*.txt
+data/eds_unmatched*.txt
+data/eds_unmatched_grouped.json
