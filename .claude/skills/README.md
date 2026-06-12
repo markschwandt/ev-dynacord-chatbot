@@ -14,7 +14,11 @@ explicitly by name.
 | [`agentic-os-architect`](agentic-os-architect/SKILL.md) | Scaffold/audit an "agentic OS": skills + subagents + commands + shared context + state | Stop Using Claude Code Without an Agentic OS · Creating Your Own Agentic OS is Easy |
 | [`creative-asset-pipeline`](creative-asset-pipeline/SKILL.md) | Brief→strategy→copy→generated assets, tracked & reproducible (Adobe/Higgsfield tools) | Higgsfield Just Turned Claude Into a Creative Agency |
 | [`model-router`](model-router/SKILL.md) | Pick the right Claude model and prompt it correctly (Fable 5 / Opus / Sonnet / Haiku) | You are using Claude Fable 5 wrong |
+| [`session-memory`](session-memory/SKILL.md) | Persistent cross-session memory: auto-capture, AI compression, context injection (claude-mem + manual fallback) | I Built The Best Claude Memory System (Beats Hermes) |
 | [`skill-builder`](skill-builder/SKILL.md) | Meta-skill: author new skills that trigger reliably (lets the fleet keep growing) | (capstone — serves the goal of building a fleet) |
+
+> `session-memory` and `knowledge-base-reflector` are complementary: the former is *automatic* raw
+> session recall (claude-mem), the latter is *curated* durable lessons. Run both.
 
 ## Source playlist
 
@@ -29,6 +33,12 @@ explicitly by name.
 | `vjdHAWvVCP4` | You are using Claude Fable 5 wrong |
 | `w0S-khYCaB4` | Creating Your Own Agentic OS is Easy (Insanely Powerful) |
 | `N5JeyaqIa7c` | **Unidentified** (too recent to be indexed at build time) |
+
+### Added separately (not in the original playlist)
+
+| ID | Title | Skill |
+|----|-------|-------|
+| `H9BUkgDf5Y4` | I Built The Best Claude Memory System (Beats Hermes) | `session-memory` |
 
 ## Provenance & honesty note
 
