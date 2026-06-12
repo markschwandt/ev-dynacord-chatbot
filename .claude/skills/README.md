@@ -15,6 +15,7 @@ explicitly by name.
 | [`creative-asset-pipeline`](creative-asset-pipeline/SKILL.md) | Brief→strategy→copy→generated assets, tracked & reproducible (Adobe/Higgsfield tools) | Higgsfield Just Turned Claude Into a Creative Agency |
 | [`model-router`](model-router/SKILL.md) | Pick the right Claude model and prompt it correctly (Fable 5 / Opus / Sonnet / Haiku) | You are using Claude Fable 5 wrong |
 | [`session-memory`](session-memory/SKILL.md) | Persistent cross-session memory: auto-capture, AI compression, context injection (claude-mem + manual fallback) | I Built The Best Claude Memory System (Beats Hermes) |
+| [`motion-website-builder`](motion-website-builder/SKILL.md) | Build a scroll-driven cinematic "motion website": AI motion clips wired into a Claude-built animated site | Claude Fable 5 + Higgsfield MCP Built This Motion Website |
 | [`skill-builder`](skill-builder/SKILL.md) | Meta-skill: author new skills that trigger reliably (lets the fleet keep growing) | (capstone — serves the goal of building a fleet) |
 
 > `session-memory` and `knowledge-base-reflector` are complementary: the former is *automatic* raw
@@ -32,7 +33,7 @@ explicitly by name.
 | `xn6Z5PYyAIE` | Higgsfield Just Turned Claude Into a Creative Agency |
 | `vjdHAWvVCP4` | You are using Claude Fable 5 wrong |
 | `w0S-khYCaB4` | Creating Your Own Agentic OS is Easy (Insanely Powerful) |
-| `N5JeyaqIa7c` | **Unidentified** (too recent to be indexed at build time) |
+| `N5JeyaqIa7c` | Claude Fable 5 + Higgsfield MCP Built This Motion Website *(identified from a user-supplied screenshot; exact ID→title match inferred, not verified against YouTube)* |
 
 ### Added separately (not in the original playlist)
 
